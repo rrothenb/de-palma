@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: De Palma - AI-powered task assignment system
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+    Description: Environment name
+  ClaudeApiKey:
+    Type: String
+    NoEcho: true
+    Description: Anthropic Claude API Key
+  GoogleSheetsId:
+    Type: String
+    Description: Google Sheets ID for team data
+  EmailDomain:
+    Type: String
+    Default: depalma.work
+    Description: Email domain for De Palma
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: nodejs18.x
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        CLAUDE_API_KEY: !Ref ClaudeApiKey
+        GOOGLE_SHEETS_ID: !Ref GoogleSheetsId
+        EMAIL_DOMAIN: !Ref EmailDomain
+        DYNAMODB_TABLE_MEMORY: !Ref MemoryTable
+        DYNAMODB_TABLE_STATE: !Ref StateTable
+
+Resources:
+  # DynamoDB Tables
+  MemoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'depalma-memory-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: type
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: type-timestamp-index
+          KeySchema:
+            - AttributeName: type
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'depalma-state-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  # Lambda Functions
+  EmailReceiverFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'depalma-email-receiver-${Environment}'
+      CodeUri: dist/lambdas/email-receiver/
+      Handler: index.handler
+      Events:
+        SESEvent:
+          Type: SES
+          Properties:
+            Rule:
+              Recipients:
+                - !Sub 'louie@${EmailDomain}'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MemoryTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StateTable
+        - Statement:
+          - Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: !GetAtt OrchestratorFunction.Arn
+
+  OrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'depalma-orchestrator-${Environment}'
+      CodeUri: dist/lambdas/orchestrator/
+      Handler: index.handler
+      Timeout: 300
+      MemorySize: 1024
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MemoryTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StateTable
+        - Statement:
+          - Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: !GetAtt EmailSenderFunction.Arn
+
+  EmailSenderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'depalma-email-sender-${Environment}'
+      CodeUri: dist/lambdas/email-sender/
+      Handler: index.handler
+      Policies:
+        - SESCrudPolicy:
+            IdentityName: !Ref EmailDomain
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MemoryTable
+
+  # API Gateway for health checks and webhooks
+  DePalmaApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'depalma-api-${Environment}'
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+  # Health check function
+  HealthCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'depalma-health-${Environment}'
+      CodeUri: dist/lambdas/orchestrator/
+      Handler: health.handler
+      Events:
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref DePalmaApi
+            Path: /health
+            Method: get
+
+  # SES Configuration
+  SESIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref EmailDomain
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${DePalmaApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"
+
+  MemoryTableName:
+    Description: "DynamoDB Memory Table Name"
+    Value: !Ref MemoryTable
+    Export:
+      Name: !Sub "${AWS::StackName}-MemoryTable"
+
+  StateTableName:
+    Description: "DynamoDB State Table Name"
+    Value: !Ref StateTable
+    Export:
+      Name: !Sub "${AWS::StackName}-StateTable"

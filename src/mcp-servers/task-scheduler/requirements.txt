@@ -1,0 +1,5 @@
+# Google OR-Tools for optimization
+ortools>=9.8.3296
+
+# Standard library support for dataclasses (included in Python 3.7+)
+# No additional packages needed for MCP protocol implementation
