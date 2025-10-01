@@ -5,11 +5,11 @@
 
 ## What This Is
 
-De Palma is an AI-powered volunteer scheduling assistant for **CCB Lille** (and similar organizations). It automates the tedious work of matching volunteers to teaching slots, handling substitutions, and ensuring every English conversation class is covered.
+De Palma is an AI-powered volunteer scheduling assistant. It automates the tedious work of matching volunteers to teaching slots, handling substitutions, and ensuring every English conversation class is covered.
 
-### Core Use Case: CCB Lille
+### Core Use Case
 
-**CCB (Centre Culturel Britannique de Lille)** is a bilingual library that helps French people learn English through:
+**A bilingual library that helps French people learn English through:
 - Conversation classes (beginner, intermediate, advanced levels)
 - Reading clubs  
 - Children's story time ("heure du conte")
@@ -24,7 +24,7 @@ De Palma is an AI-powered volunteer scheduling assistant for **CCB Lille** (and 
 - **Minimize coordinator workload** - automate the tedious matching work
 - **Natural language interface** - coordinators interact via email like talking to a person
 - **Respect volunteer preferences** while ensuring coverage
-- **Extensible** - start with CCB, expand to other volunteer organizations later
+- **Extensible** - start with volunteer scheduling, expand to other business use cases later
 
 ## Technical Architecture
 
